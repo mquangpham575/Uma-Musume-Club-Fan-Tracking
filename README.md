@@ -11,10 +11,9 @@ This project fetches club friend history data from https://chronogenesis.net/ an
 3. Open globals.py and update any values you want, for example:
 
 ```
-   EXCEL_NAME = "chronogenesis_endgame_export.xlsx"
    URL = "https://chronogenesis.net/club_profile?circle_id=endgame"
-   EDGE_PATH = r"C:/Program Files/Microsoft/Edge/Application/msedge.exe"
-   THRESHOLD = 2000000
+   THRESHOLD = 1800000
+   EXCEL_NAME = "chronogenesis_endgame_export.xlsx"
 ```
 
 4. Install dependencies:

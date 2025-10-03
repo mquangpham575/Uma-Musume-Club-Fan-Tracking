@@ -3,13 +3,13 @@ from pathlib import Path
 import pandas as pd
 import zendriver as zd
 
-from globals import EXCEL_NAME, URL, EDGE_PATH, THRESHOLD
+from globals import THRESHOLD, EXCEL_NAME, URL
 
 async def main():
     # --- Grab JSON ---
     browser = await zd.start(
         browser="edge",
-        browser_executable_path=EDGE_PATH,
+        browser_executable_path="C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     )
     page = await browser.get("https://google.com")
     async with page.expect_request(r".*\/api\/.*") as req:
