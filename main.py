@@ -41,12 +41,18 @@ async def main():
         key=lambda x: int(x.split()[1]) if x.split()[1].isdigit() else 0
     )
 
-    # Add average column
+    # Add optional Data
     df["AVG/d"] = df[day_cols].mean(axis=1).round(0)
     df = df[["friend_viewer_id","friend_name","AVG/d"] + day_cols]
 
+    # Rename columns for clarity
+    df = df.rename(columns={
+        "friend_viewer_id": "Member_ID",
+        "friend_name": "Member_Name"
+    })
+
     # Keep IDs and names as string, numbers stay numeric
-    text_cols = ["friend_viewer_id", "friend_name"]
+    text_cols = ["Member_ID", "Member_Name"]
     for col in df.columns:
         if col in text_cols:
             df[col] = df[col].fillna("").astype(str)
@@ -61,7 +67,7 @@ async def main():
 
     excel_path = str((base_path / EXCEL_NAME).resolve())
     with pd.ExcelWriter(excel_path, engine="xlsxwriter") as writer:
-        sheet = "pivot_summary"
+        sheet = "data"
         df.to_excel(writer, sheet_name=sheet, index=False)
 
         ws = writer.sheets[sheet]
@@ -70,17 +76,12 @@ async def main():
         # Define border format
         border_fmt = writer.book.add_format({"border": 1})
 
-        # Apply border to all cells including headers
+        # Apply border
         ws.conditional_format(0, 0, nrows, ncols-1, {
-            "type": "no_blanks",
+            "type": "formula",
+            "criteria": "TRUE",
             "format": border_fmt
         })
-
-        # Set column widths
-        ws.set_column(0, 0, 20)  # ID
-        ws.set_column(1, 1, 18)  # name
-        if ncols > 2: 
-            ws.set_column(2, ncols-1, 12)  
 
         # Conditional formatting: red if below THRESHOLD
         ws.conditional_format(1, 2, df.shape[0], ncols-1, {
@@ -90,6 +91,12 @@ async def main():
             "format": writer.book.add_format({"font_color": "red"})
         })
         
+        # Set column widths
+        ws.set_column(0, 0, 20)  # Member_ID
+        ws.set_column(1, 1, 18)  # Member_name
+        if ncols > 2: 
+            ws.set_column(2, ncols-1, 12)  
+
         ws.freeze_panes(1, 0)
 
     os.startfile(excel_path)
