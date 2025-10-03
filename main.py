@@ -35,38 +35,43 @@ async def fetch_json(URL: str):
     text = body.decode("utf-8", errors="replace") if isinstance(body, (bytes, bytearray)) else str(body)
     return json.loads(text)
 
-def build_dataframe(data: dict) -> pd.DataFrame:
+def build_dataframe(data: dict) -> tuple[pd.DataFrame, list[str]]:
+    # Flatten and ensure columns exist
     df = pd.json_normalize(data.get("club_friend_history") or [])
-    for c in ["friend_viewer_id", "friend_name", "actual_date", "adjusted_fan_gain_cumulative"]:
+    needed = ["friend_viewer_id", "friend_name", "actual_date", "adjusted_interpolated_fan_gain"]
+    for c in needed:
         if c not in df.columns:
             df[c] = pd.NA
 
+    # Build "Day x" columns from the *daily* (interpolated) gain
     df = (
         df.assign(day_col=lambda d: "Day " + d["actual_date"].astype(str))
-          .pivot_table(index=["friend_viewer_id","friend_name"],
-                       columns="day_col",
-                       values="adjusted_fan_gain_cumulative",
-                       aggfunc="first")
+          .pivot_table(
+              index=["friend_viewer_id", "friend_name"],
+              columns="day_col",
+              values="adjusted_interpolated_fan_gain",
+              aggfunc="first"  # if there can be multiple rows per day, switch to "sum"
+          )
           .reset_index()
     )
     df.columns.name = None
 
-    day_cols = sorted(
-        [c for c in df.columns if isinstance(c, str) and c.startswith("Day ")],
-        key=lambda x: int(x.split()[1]) if x.split()[1].isdigit() else 0
-    )
+    # Sort day columns numerically if possible
+    day_cols = [c for c in df.columns if isinstance(c, str) and c.startswith("Day ")]
+    def _day_key(x: str):
+        part = x.split(maxsplit=1)[1] if " " in x else x
+        try:
+            return int(part)
+        except Exception:
+            return part
+    day_cols = sorted(day_cols, key=_day_key)
 
-    # AVG/d
+    # AVG per day (from daily values)
     df["AVG/d"] = df[day_cols].mean(axis=1).round(0) if day_cols else 0
-    df = df[["friend_viewer_id","friend_name","AVG/d"] + day_cols]
+    df = df[["friend_viewer_id", "friend_name", "AVG/d"] + day_cols]
 
-    # Rename first two columns
-    df = df.rename(columns={
-        "friend_viewer_id": "Member_ID",
-        "friend_name": "Member_Name"
-    })
-
-    # Types: keep names as text, others numeric
+    # Rename and set dtypes
+    df = df.rename(columns={"friend_viewer_id": "Member_ID", "friend_name": "Member_Name"})
     for col in df.columns:
         if col in ["Member_ID", "Member_Name"]:
             df[col] = df[col].fillna("").astype(str)
