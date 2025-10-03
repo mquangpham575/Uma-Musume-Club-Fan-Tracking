@@ -38,3 +38,5 @@ build/
 
 # Env
 .env
+# EXE ouput
+main.spec

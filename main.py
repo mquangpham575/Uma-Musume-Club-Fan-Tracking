@@ -54,7 +54,12 @@ async def main():
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # --- Export to Excel ---
-    excel_path = str((Path(__file__).parent / EXCEL_NAME).resolve())
+    if getattr(sys, 'frozen', False):  # running as .exe
+        base_path = Path(sys.executable).parent
+    else:  # running as .py
+        base_path = Path(__file__).parent
+
+    excel_path = str((base_path / EXCEL_NAME).resolve())
     with pd.ExcelWriter(excel_path, engine="xlsxwriter") as writer:
         sheet = "pivot_summary"
         df.to_excel(writer, sheet_name=sheet, index=False)
