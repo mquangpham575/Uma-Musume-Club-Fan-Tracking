@@ -20,7 +20,7 @@ This project fetches club friend history data from https://chronogenesis.net/ an
 4. Install dependencies:
    `pip install -r requirements.txt`
 
-🛠 Build to EXE (Windows only)
+🛠 Build to EXE (Windows only)  
 To package into a single .exe:
-`python -m PyInstaller --onefile main.py`
+`python -m PyInstaller --onefile main.py`  
 The executable will be in dist/main.exe.
