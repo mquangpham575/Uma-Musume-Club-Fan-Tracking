@@ -41,7 +41,7 @@ async def main():
         key=lambda x: int(x.split()[1]) if x.split()[1].isdigit() else 0
     )
 
-    # add average column
+    # Add average column
     df["AVG/d"] = df[day_cols].mean(axis=1).round(0)
     df = df[["friend_viewer_id","friend_name","AVG/d"] + day_cols]
 
@@ -53,7 +53,7 @@ async def main():
         else:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # --- Export to Excel with xlsxwriter ---
+    # --- Export to Excel ---
     excel_path = str((Path(__file__).parent / EXCEL_NAME).resolve())
     with pd.ExcelWriter(excel_path, engine="xlsxwriter") as writer:
         sheet = "pivot_summary"
@@ -75,9 +75,9 @@ async def main():
         ws.set_column(0, 0, 20)  # ID
         ws.set_column(1, 1, 18)  # name
         if ncols > 2: 
-            ws.set_column(2, ncols-1, 12)  # numeric columns
+            ws.set_column(2, ncols-1, 12)  
 
-        # --- Conditional formatting: red if below THRESHOLD
+        # Conditional formatting: red if below THRESHOLD
         ws.conditional_format(1, 2, df.shape[0], ncols-1, {
             "type": "cell",
             "criteria": "<",
@@ -87,18 +87,7 @@ async def main():
         
         ws.freeze_panes(1, 0)
 
-    # open file
-    try:
-        if os.name == "nt": 
-            os.startfile(excel_path)
-        elif sys.platform == "darwin": 
-            os.spawnlp(os.P_NOWAIT, "open", "open", excel_path)
-        else: 
-            os.spawnlp(os.P_NOWAIT, "xdg-open", "xdg-open", excel_path)
-    except Exception:
-        pass
-
-    print(f"Excel exported: {excel_path}")
+    os.startfile(excel_path)
 
 if __name__ == "__main__":
     asyncio.run(main())
