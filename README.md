@@ -16,12 +16,8 @@ This project fetches club friend history data from https://chronogenesis.net/ an
    EXCEL_NAME = "chronogenesis_endgame_export.xlsx"
 ```
 
-4. Install dependencies:
-   `pip install -r requirements.txt`
-
 **▶️ Usage**  
-Run the script with:  
-`python main.py`
+Just double-click `Script_run.bat` from File Explorer.
 
 **🛠 Build to EXE (Windows only)**  
 To package into a single .exe:

@@ -59,6 +59,7 @@ async def main():
         else:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
+    print("Got the data")
     # --- Export to Excel ---
     if getattr(sys, 'frozen', False):  # running as .exe
         base_path = Path(sys.executable).parent
@@ -98,7 +99,7 @@ async def main():
             ws.set_column(2, ncols-1, 12)  
 
         ws.freeze_panes(1, 0)
-
+    
     os.startfile(excel_path)
 
 if __name__ == "__main__":
