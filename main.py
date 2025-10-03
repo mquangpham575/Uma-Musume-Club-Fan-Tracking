@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 import zendriver as zd
 
-from globals import EXCEL_NAME, URL, EDGE_PATH
+from globals import EXCEL_NAME, URL, EDGE_PATH, THRESHOLD
 
 async def main():
     # --- Grab JSON ---
@@ -77,11 +77,11 @@ async def main():
         if ncols > 2: 
             ws.set_column(2, ncols-1, 12)  # numeric columns
 
-        # --- Conditional formatting: red if below 1800000
+        # --- Conditional formatting: red if below THRESHOLD
         ws.conditional_format(1, 2, df.shape[0], ncols-1, {
             "type": "cell",
             "criteria": "<",
-            "value": 1800000,
+            "value": THRESHOLD,
             "format": writer.book.add_format({"font_color": "red"})
         })
         
