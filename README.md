@@ -1,4 +1,4 @@
-**#📄 Uma Club Tracking**
+# **📄 Uma Club Tracking**
 
 Chronogenesis Data Exporter
 
