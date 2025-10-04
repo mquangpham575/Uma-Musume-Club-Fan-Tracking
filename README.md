@@ -4,6 +4,11 @@ Chronogenesis Data Exporter
 
 This project fetches club friend history data from https://chronogenesis.net/ and exports it into a clean, formatted Excel file with borders, average calculation, and conditional formatting.
 
+**Preview**
+![](assets/preview.png)
+
+For the **Endless** community, simply use the `.exe` file available in **[Releases](../../releases)** — no setup required.
+
 **⚙️ Setup**
 
 1. Click the green Code button (top-right) → Download ZIP.
@@ -23,3 +28,5 @@ Just double-click `Script_run.bat` from File Explorer.
 To package into a single .exe:
 `python -m PyInstaller --onefile main.py`  
 The executable will be in dist/main.exe.
+
+![](assets/image.png)
