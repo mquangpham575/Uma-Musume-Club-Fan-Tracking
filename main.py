@@ -162,6 +162,10 @@ def export_excel(df: pd.DataFrame, excel_path: str, threshold: int, sheet_name: 
         for c in range(ncols):
             ws.write(0, c, df.columns[c], fmt_gap_blue if c == gidx else fmt_header)
 
+        # Add filter over used range (exclude bottom Total row)
+        if nrows > 1:
+            ws.autofilter(0, 0, last_data_row - 1, ncols - 1)
+            
         # Thin borders
         ws.conditional_format(1, 0, last_row, ncols - 1, {
             "type": "formula", "criteria": "TRUE", "format": fmt_border_all

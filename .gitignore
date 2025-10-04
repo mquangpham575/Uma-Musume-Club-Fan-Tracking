@@ -40,3 +40,4 @@ build/
 .env
 # EXE ouput
 main.spec
+*.spec
