@@ -1,15 +1,3 @@
-"""
-ChronoGenesis Club Data Exporter
---------------------------------
-Fetches club JSON data from a web API, converts it into a structured DataFrame,
-and exports it to an Excel file with conditional formatting.
-
-Dependencies:
-    pip install pandas xlsxwriter zendriver
-
-License: MIT
-"""
-
 import asyncio
 import json
 import os
@@ -105,7 +93,7 @@ def build_dataframe(data: dict) -> tuple[pd.DataFrame, list[str]]:
     df = df[["friend_viewer_id", "friend_name", "AVG/d"] + day_cols]
     df = df.rename(columns={"friend_viewer_id": "Member_ID", "friend_name": "Member_Name"})
 
-    # Type conversions
+    # Data formatting
     for col in df.columns:
         if col in ["Member_ID", "Member_Name"]:
             df[col] = df[col].fillna("").astype(str)
@@ -113,7 +101,6 @@ def build_dataframe(data: dict) -> tuple[pd.DataFrame, list[str]]:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
     return df, day_cols
-
 
 # === Excel export ===
 def export_excel(df: pd.DataFrame, excel_path: str, threshold: int, sheet_name: str):
