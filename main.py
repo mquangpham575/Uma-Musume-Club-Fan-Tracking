@@ -82,8 +82,10 @@ def build_dataframe(data: dict) -> pd.DataFrame:
     for c in df.columns:
         if c not in ("Member_ID", "Member_Name"):
             df[c] = pd.to_numeric(df[c], errors="coerce")
-    return df
 
+    # Sort rows: largest AVG/d first; tie-break by name (stable sort)
+    df = df.sort_values(["AVG/d", "Member_Name"], ascending=[False, True], kind="mergesort").reset_index(drop=True)
+    return df
 
 # === Excel export ===
 def export_excel(df: pd.DataFrame, excel_path: str, threshold: int, sheet_name: str):
