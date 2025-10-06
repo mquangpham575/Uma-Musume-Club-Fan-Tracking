@@ -41,3 +41,4 @@ build/
 # EXE ouput
 main.spec
 *.spec
+credentials.json

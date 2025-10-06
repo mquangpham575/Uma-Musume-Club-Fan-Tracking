@@ -5,16 +5,29 @@ import sys
 from pathlib import Path
 import pandas as pd
 import zendriver as zd
+import gspread
+from google.oauth2.service_account import Credentials
 
 from globals import CLUBS  # external config for club list/URLs/thresholds
 
 
+# ========== Google Sheets config ==========
+SHEET_ID = "1dA2gLLQY5RA23gWFunytA50xXOQ5oPgKb1TjqVCTNlk"
+
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+CREDS = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
+GC = gspread.authorize(CREDS)
+
+
 # === Club selection ===
-def pick_club() -> dict:
+def pick_club() -> dict | str:
     print("=== Choose a club to export ===")
     for key, cfg in CLUBS.items():
         print(f"{key}. {cfg['title']}")
-    choice = input("Enter 1–7: ").strip()
+    print("0. Export ALL clubs")
+    choice = input("Enter 0–7: ").strip()
+    if choice == "0":
+        return "ALL"
     if choice not in CLUBS:
         print("Invalid choice, defaulting to 1.")
         choice = "1"
@@ -63,16 +76,15 @@ def build_dataframe(data: dict) -> pd.DataFrame:
     )
     df.columns.name = None
 
-    # Sort Day N columns numerically
     def _day_key(x: str):
         if not isinstance(x, str) or not x.startswith("Day "): return x
         try:
             return int(x.split(maxsplit=1)[1])
         except Exception:
             return x
+
     day_cols = sorted([c for c in df.columns if isinstance(c, str) and c.startswith("Day ")], key=_day_key)
 
-    # AVG/d, rename ID/Name, cast numeric
     df["AVG/d"] = df[day_cols].mean(axis=1).round(0) if day_cols else 0
     df = df[["friend_viewer_id", "friend_name", "AVG/d"] + day_cols].rename(
         columns={"friend_viewer_id": "Member_ID", "friend_name": "Member_Name"}
@@ -83,186 +95,154 @@ def build_dataframe(data: dict) -> pd.DataFrame:
         if c not in ("Member_ID", "Member_Name"):
             df[c] = pd.to_numeric(df[c], errors="coerce")
 
-    # Sort rows: largest AVG/d first; tie-break by name (stable sort)
     df = df.sort_values(["AVG/d", "Member_Name"], ascending=[False, True], kind="mergesort").reset_index(drop=True)
     return df
 
-# === Excel export ===
-def export_excel(df: pd.DataFrame, excel_path: str, threshold: int, sheet_name: str):
-    import re
 
-    def col_idx(columns, name):
-        try:
-            return columns.get_loc(name)
-        except KeyError:
-            return None
-
-    def day_columns(columns):
-        return [c for c in columns if isinstance(c, str) and c.startswith("Day ")]
+# === Google Sheets export ===
+def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, threshold: int):
+    from gspread.utils import rowcol_to_a1
 
     GAP_COL = " "
-    dcols = day_columns(df.columns)
+    dcols = [c for c in df.columns if isinstance(c, str) and c.startswith("Day ")]
+    df_to_write = df.copy()
 
-    # Add per-row Total and insert gap column before it
     if dcols:
-        df = df.copy()
-        df["Total"] = df[dcols].sum(axis=1, min_count=1)
-        df.insert(df.columns.get_loc("Total"), GAP_COL, "")
+        df_to_write["Total"] = df_to_write[dcols].sum(axis=1, min_count=1)
+        gidx = df_to_write.columns.get_loc("Total")
+        df_to_write.insert(gidx, GAP_COL, "")
+    else:
+        gidx = None
 
-    # Precompute bottom totals (label under Member_Name; blank under id/gap)
     bottom_totals = {}
-    for c in df.columns:
+    for c in df_to_write.columns:
         if c == "Member_Name":
             bottom_totals[c] = "Total"
         elif c in ("Member_ID", GAP_COL):
             bottom_totals[c] = ""
         else:
-            bottom_totals[c] = pd.to_numeric(df[c], errors="coerce").sum(min_count=1)
+            bottom_totals[c] = pd.to_numeric(df_to_write[c], errors="coerce").sum(min_count=1)
 
-    with pd.ExcelWriter(excel_path, engine="xlsxwriter") as writer:
-        df.to_excel(writer, sheet_name=sheet_name, index=False)
-        ws = writer.sheets[sheet_name]
-        book = writer.book
+    header = list(map(str, df_to_write.columns))
+    data_rows = df_to_write.where(pd.notna(df_to_write), "").values.tolist()
+    totals_row = [("" if pd.isna(v) else v) for v in (bottom_totals.get(c, "") for c in df_to_write.columns)]
+    values = [header] + data_rows + [totals_row]
 
-        # Layout numbers
-        nrows, ncols = df.shape
-        first_data_row = 1
-        last_data_row = first_data_row + nrows - 1
-        totals_row = last_data_row + 1
+    ss = GC.open_by_key(spreadsheet_id)
+    for ws in ss.worksheets():
+        if ws.title == sheet_title:
+            ss.del_worksheet(ws)
+            break
+    ws = ss.add_worksheet(title=sheet_title, rows=max(len(values) + 50, 100), cols=max(len(header) + 10, 26))
 
-        # Colors/styles
-        header_color = "#4F81BD"   # Excel Table Style Medium 2 header blue
-        header_font  = "#FFFFFF"
+    end_row = len(values)
+    end_col = len(header)
+    end_a1 = rowcol_to_a1(end_row, end_col)
+    ws.update(values, f"A1:{end_a1}")
 
-        fmt_num        = book.add_format({"num_format": "#,##0"})
-        fmt_text       = book.add_format({"num_format": "@"})
-        fmt_bold_cell  = book.add_format({"bold": True, "border": 1})
-        fmt_border_all = book.add_format({"border": 1})
-        fmt_blank_grey = book.add_format({"bg_color": "#BFBFBF"})
-        fmt_red_fill   = book.add_format({"bg_color": "#FFC7CE", "border": 1, "border_color": "red"})
-        fmt_gap_column = book.add_format({"bg_color": header_color})
-        fmt_total_row  = book.add_format({
-            "bg_color": header_color, "font_color": header_font, "bold": True,
-            "border": 1, "align": "center", "valign": "vcenter"
-        })
+    # ===== FORMATTING =====
+    sheet_id = ws._properties["sheetId"]
+    last_data_row_1based = 1 + len(data_rows)
 
-        # Column widths
-        ws.set_column(0, 0, 20, fmt_text)        # Member_ID
-        ws.set_column(1, 1, 18, fmt_text)        # Member_Name
-        ws.set_column(2, ncols - 1, 12)
+    header_range = {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": end_col}
+    totals_range = {"sheetId": sheet_id, "startRowIndex": end_row - 1, "endRowIndex": end_row, "startColumnIndex": 0, "endColumnIndex": end_col}
+    blank_col_range = {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": end_row, "startColumnIndex": gidx, "endColumnIndex": gidx + 1} if gidx is not None else None
+    header_plus_data_range = {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": last_data_row_1based, "startColumnIndex": 0, "endColumnIndex": end_col}
+    data_rows_range = {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": last_data_row_1based, "startColumnIndex": 0, "endColumnIndex": end_col}
+    full_table_range = {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": end_row, "startColumnIndex": 0, "endColumnIndex": end_col}
 
-        gidx = col_idx(df.columns, GAP_COL)
-        if gidx is not None:
-            ws.set_column(gidx, gidx, 2)
+    skip = {"Member_ID", "Member_Name", GAP_COL}
+    numeric_cols_1 = [i + 1 for i, c in enumerate(header) if c not in skip]
 
-        # Create table(s), excluding the gap column so it won’t inherit banding
-        table_name = re.sub(r"[^A-Za-z0-9_]", "_", f"tbl_{sheet_name or 'Sheet'}") or "tbl_Data"
-        if gidx is not None:
-            ws.add_table(0, 0, last_data_row, gidx - 1, {
-                "name": table_name + "_L", "style": "Table Style Medium 2",
-                "columns": [{"header": str(h)} for h in df.columns[:gidx]],
-                "autofilter": True, "banded_rows": True
-            })
-            if gidx < ncols - 1:
-                ws.add_table(0, gidx + 1, last_data_row, ncols - 1, {
-                    "name": table_name + "_R", "style": "Table Style Medium 2",
-                    "columns": [{"header": str(h)} for h in df.columns[gidx + 1:]],
-                    "autofilter": True, "banded_rows": True
-                })
-        else:
-            ws.add_table(0, 0, last_data_row, ncols - 1, {
-                "name": table_name, "style": "Table Style Medium 2",
-                "columns": [{"header": str(h)} for h in df.columns],
-                "autofilter": True, "banded_rows": True
-            })
+    def col_data_grid(col_1):
+        return {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": last_data_row_1based, "startColumnIndex": col_1 - 1, "endColumnIndex": col_1}
+    numeric_ranges = [col_data_grid(c1) for c1 in numeric_cols_1]
 
-        # Borders and blanks (data only)
-        ws.conditional_format(first_data_row, 0, last_data_row, ncols - 1,
-                              {"type": "formula", "criteria": "TRUE", "format": fmt_border_all})
+    blue_fill = {"red": 0.31, "green": 0.51, "blue": 0.74}
+    white_font = {"red": 1, "green": 1, "blue": 1}
+    red_fill   = {"red": 1.00, "green": 0.78, "blue": 0.81}
+    grey_fill  = {"red": 0.75, "green": 0.75, "blue": 0.75}
 
-        # Gap column fill for DATA rows only (leave header, totals untouched)
-        if gidx is not None:
-            ws.conditional_format(0, gidx, last_data_row, gidx,
-                                  {"type": "formula", "criteria": "TRUE", "format": fmt_gap_column, "stop_if_true": True})
+    requests = [
+        {"setBasicFilter": {"filter": {"range": header_plus_data_range}}},
+        {
+            "repeatCell": {
+                "range": header_range,
+                "cell": {"userEnteredFormat": {"backgroundColor": blue_fill, "textFormat": {"bold": True, "foregroundColor": white_font}}},
+                "fields": "userEnteredFormat(backgroundColor,textFormat)"
+            }
+        },
+        {
+            "repeatCell": {
+                "range": totals_range,
+                "cell": {"userEnteredFormat": {"backgroundColor": blue_fill, "textFormat": {"bold": True, "foregroundColor": white_font}}},
+                "fields": "userEnteredFormat(backgroundColor,textFormat)"
+            }
+        },
+        *([
+            {
+                "repeatCell": {
+                    "range": blank_col_range,
+                    "cell": {"userEnteredFormat": {"backgroundColor": blue_fill}},
+                    "fields": "userEnteredFormat.backgroundColor"
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": gidx, "endIndex": gidx + 1},
+                    "properties": {"pixelSize": 40},
+                    "fields": "pixelSize"
+                }
+            }
+        ] if blank_col_range else []),
+        {
+            "addConditionalFormatRule": {
+                "rule": {"ranges": numeric_ranges, "booleanRule": {"condition": {"type": "NUMBER_LESS", "values": [{"userEnteredValue": str(threshold)}]}, "format": {"backgroundColor": red_fill}}},
+                "index": 0
+            }
+        },
+        {
+            "addConditionalFormatRule": {
+                "rule": {"ranges": numeric_ranges, "booleanRule": {"condition": {"type": "BLANK"}, "format": {"backgroundColor": grey_fill}}},
+                "index": 0
+            }
+        },
+        {
+            "updateBorders": {
+                "range": full_table_range,
+                "top": {"style": "SOLID"},
+                "bottom": {"style": "SOLID"},
+                "left": {"style": "SOLID"},
+                "right": {"style": "SOLID"},
+                "innerHorizontal": {"style": "SOLID"},
+                "innerVertical": {"style": "SOLID"},
+            }
+        },
+    ]
 
-            if gidx > 0:
-                ws.conditional_format(first_data_row, 0, last_data_row, gidx - 1,
-                                      {"type": "blanks", "format": fmt_blank_grey})
-            if gidx < ncols - 1:
-                ws.conditional_format(first_data_row, gidx + 1, last_data_row, ncols - 1,
-                                      {"type": "blanks", "format": fmt_blank_grey})
-        else:
-            ws.conditional_format(first_data_row, 0, last_data_row, ncols - 1,
-                                  {"type": "blanks", "format": fmt_blank_grey})
-
-        # Numeric formats + threshold highlights (data only)
-        if dcols:
-            c0, c1 = df.columns.get_loc(dcols[0]), df.columns.get_loc(dcols[-1])
-            ws.conditional_format(first_data_row, c0, last_data_row, c1,
-                                  {"type": "no_blanks", "format": fmt_num})
-            ws.conditional_format(first_data_row, c0, last_data_row, c1,
-                                  {"type": "cell", "criteria": "<", "value": threshold, "format": fmt_red_fill})
-
-        avg_idx = col_idx(df.columns, "AVG/d")
-        if avg_idx is not None:
-            ws.conditional_format(first_data_row, avg_idx, last_data_row, avg_idx,
-                                  {"type": "no_blanks", "format": fmt_num})
-            ws.conditional_format(first_data_row, avg_idx, last_data_row, avg_idx,
-                                  {"type": "cell", "criteria": "<", "value": threshold, "format": fmt_red_fill})
-
-        total_col_idx = col_idx(df.columns, "Total")
-        if total_col_idx is not None:
-            ws.conditional_format(first_data_row, total_col_idx, last_data_row, total_col_idx,
-                                  {"type": "no_blanks", "format": fmt_num})
-
-        # Append totals row (outside table) and style it like the header
-        if "Member_Name" in df.columns:
-            ws.write(totals_row, df.columns.get_loc("Member_Name"), "Total", fmt_bold_cell)
-        for j, col_name in enumerate(df.columns):
-            if col_name in ("Member_ID", "Member_Name", GAP_COL):
-                continue
-            val = bottom_totals.get(col_name, "")
-            if pd.isna(val):
-                continue
-            if isinstance(val, (int, float)):
-                ws.write_number(totals_row, j, float(val), fmt_bold_cell)
-            else:
-                ws.write(totals_row, j, val, fmt_bold_cell)
-
-        ws.conditional_format(totals_row, 0, totals_row, ncols - 1,
-                              {"type": "formula", "criteria": "TRUE", "format": fmt_total_row})
-
-        # Keep Total column bold through the bottom
-        if total_col_idx is not None:
-            ws.conditional_format(first_data_row, total_col_idx, totals_row, total_col_idx,
-                                  {"type": "formula", "criteria": "TRUE", "format": fmt_bold_cell})
-
-        ws.freeze_panes(1, 0)
-
-
-# === Helpers ===
-def open_excel_windows(excel_path: str):
-    os.startfile(excel_path)
+    ws.spreadsheet.batch_update({"requests": requests})
+    print(f"✅ Exported '{sheet_title}' ({end_row} rows × {end_col} cols)")
 
 
 # === Main ===
 async def main():
-    cfg = pick_club()
-    URL = cfg["URL"]; EXCEL_NAME = cfg["EXCEL_NAME"]; THRESHOLD = cfg["THRESHOLD"]
+    choice = pick_club()
 
-    print(f"\nSelected: {cfg['title']}\nURL: {URL}\nExcel: {EXCEL_NAME}\nThreshold: {THRESHOLD}\n")
-
-    data = await fetch_json(URL)
-    df = build_dataframe(data)
-
-    base_dir = resolve_base_dir()
-    excel_path = str((base_dir / EXCEL_NAME).resolve())
-    export_excel(df, excel_path, THRESHOLD, cfg["title"])
-
-    try:
-        open_excel_windows(excel_path)
-    except Exception as e:
-        print(f"Exported to: {excel_path} (could not auto-open: {e})")
+    if choice == "ALL":
+        print("\nExporting ALL clubs...\n")
+        for key, cfg in CLUBS.items():
+            print(f"→ Exporting {cfg['title']} ...")
+            data = await fetch_json(cfg["URL"])
+            df = build_dataframe(data)
+            export_to_gsheets(df, spreadsheet_id=SHEET_ID, sheet_title=cfg["title"], threshold=cfg["THRESHOLD"])
+        print("\n✅ All clubs exported successfully!")
+    else:
+        cfg = choice
+        print(f"\nSelected: {cfg['title']}\nURL: {cfg['URL']}\nSheet: {SHEET_ID}\nThreshold: {cfg['THRESHOLD']}\n")
+        data = await fetch_json(cfg["URL"])
+        df = build_dataframe(data)
+        export_to_gsheets(df, spreadsheet_id=SHEET_ID, sheet_title=cfg["title"], threshold=cfg["THRESHOLD"])
+        print(f"✅ Exported single club '{cfg['title']}' successfully!")
 
 
 if __name__ == "__main__":
