@@ -1,4 +1,4 @@
-# **📄 Uma Club Tracking — Chronogenesis Exporter **
+# 📄 Uma Club Tracking
 
 This project fetches **club friend history data** from [ChronoGenesis](https://chronogenesis.net/)  
 and automatically exports it into a **formatted Google Spreadsheet** — complete with borders, totals, averages, and conditional formatting.
