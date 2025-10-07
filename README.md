@@ -119,3 +119,5 @@ You can run it directly or through Script_run.bat.
 - If you want to change your output Google Sheet, edit `SHEET_ID` in `globals.py`
 - The script automatically deletes and recreates each sheet before exporting
 - To limit simultaneous exports (for lower-end PCs), you can add a concurrency cap in `main()`
+
+![hehe](assets/evernight.gif)
