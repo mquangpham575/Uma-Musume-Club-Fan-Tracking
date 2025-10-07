@@ -17,13 +17,14 @@ For the **Endless** community, you can directly use the `.exe` from **[Releases]
 3. Place your **Google API credentials** file as `credentials.json` in the same directory
 4. Open `globals.py` and edit these values if needed:
 
-```python
-SHEET_ID = "1O09PM-hYo-H05kWWqMg71GelEpfaGrePQWzdDCKOqyU"
+python
+
+````SHEET_ID = "1O09PM-hYo-H05kWWqMg71GelEpfaGrePQWzdDCKOqyU"
 
 CLUBS = {
     "1": {"title": "EndGame", "URL": "https://chronogenesis.net/club_profile?circle_id=endgame", "THRESHOLD": 1800000},
     ...
-}
+}```
 
 ## ▶️ Usage
 
@@ -49,4 +50,4 @@ Each club will appear as a separate sheet inside your Google Spreadsheet.
     - ⚪ **Grey** → blank cell
 - `Member_Name` column auto-sized (fits filter icon)
 - Adds a **Total** column & row automatically
-```
+````
