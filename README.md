@@ -110,8 +110,6 @@ dist/main.exe
 
 ```
 
-You can run it directly or through Script_run.bat.
-
 ---
 
 ## 🪶 Notes
