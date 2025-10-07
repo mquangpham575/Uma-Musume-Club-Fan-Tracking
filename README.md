@@ -6,7 +6,7 @@ and automatically exports it into a **formatted Google Spreadsheet** — complet
 **Preview**
 ![preview](assets/preview.png)
 
-For the **Endless** community, place your `credentials.json` file in the same folder, then use the `.exe` from **[Releases](../../releases)** — no further setup needed.
+For the **Endless** community, check the **[Releases](../../releases)** — no need the setup below.
 
 ---
 
