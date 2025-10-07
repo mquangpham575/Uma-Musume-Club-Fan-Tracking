@@ -5,7 +5,7 @@ and automatically exports it into a **formatted Google Spreadsheet** — complet
 
 ![preview](assets/preview.png)
 
-For the **Endless** community, check the **[Releases](../../releases)** — no need the setup below.
+For the **Endless** community, check the **[Releases](https://github.com/mquangpham575/Uma_Club_Fan_Tracking/releases/tag/v1.0)** — no need the setup below.
 
 ---
 
