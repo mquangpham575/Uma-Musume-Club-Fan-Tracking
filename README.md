@@ -51,3 +51,23 @@ Then choose:
   - ⚪ **Grey** → blank cell
 - `Member_Name` column auto-sized (fits filter icon)
 - Adds a **Total** column & row automatically
+
+## ⚡ Parallel Mode
+
+Version 3.0 now runs all clubs **asynchronously in parallel**,
+
+reducing total runtime from 8× down to roughly 1× overall loading time.
+
+> Each club runs in its own Edge browser instance (via zendriver).
+>
+> Expect brief multiple Edge popups — this is normal.
+
+---
+
+## 🧰 Requirements
+
+Install dependencies:
+
+```
+pip install -r requirements.txt
+```
