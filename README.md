@@ -6,7 +6,7 @@ and automatically exports it into a **formatted Google Spreadsheet** — complet
 **Preview**
 ![preview](assets/preview.png)
 
-For the **Endless** community, you can directly use the `.exe` from **[Releases](../../releases)** — no setup needed.
+For the **Endless** community, place your `credentials.json` file in the same folder, then use the `.exe` from **[Releases](../../releases)** — no further setup needed.
 
 ---
 
@@ -14,7 +14,10 @@ For the **Endless** community, you can directly use the `.exe` from **[Releases]
 
 1. Click the green **Code** button → **Download ZIP**
 2. Extract the folder anywhere on your computer
-3. Place your **Google API credentials** file as `credentials.json` in the same directory
+3. Follow this video tutorial to create your Google API credentials:
+   ▶️ https://youtu.be/zCEJurLGFRk
+   Watch from 1:59 → 6:50 to generate your Service Account key
+   Then rename the file to credentials.json and place it in the same folder as main.py
 4. Open `globals.py` and edit these values if needed:
 
 ```
