@@ -17,25 +17,30 @@ For the **Endless** community, you can directly use the `.exe` from **[Releases]
 3. Place your **Google API credentials** file as `credentials.json` in the same directory
 4. Open `globals.py` and edit these values if needed:
 
-'''SHEET_ID = "1O09PM-hYo-H05kWWqMg71GelEpfaGrePQWzdDCKOqyU"
+````SHEET_ID = "1O09PM-hYo-H05kWWqMg71GelEpfaGrePQWzdDCKOqyU"
 
 CLUBS = {
 "1": {"title": "EndGame", "URL": "https://chronogenesis.net/club_profile?circle_id=endgame", "THRESHOLD": 1800000},
 ...
-}'''
+}```
 
 ## ▶️ Usage
 
 Simply double-click:
 '''"Script_run.bat"'''
 Then choose:
-'''=== Choose a club to export ===
+
+````
+
+=== Choose a club to export ===
 
 1. EndGame
-2. AnotherClub  
+2. AnotherClub
    ...
 3. Export ALL clubs (default)
-   Enter 0–7 [default=0]:'''
+   Enter 0–7 [default=0]:
+
+```
 
 - Press Enter / 0: export all clubs in parallel
 - Enter a number: export a single club only
@@ -54,13 +59,10 @@ Then choose:
 
 ## ⚡ Parallel Mode
 
-Version 3.0 now runs all clubs **asynchronously in parallel**,
+Version 3.0 now runs all clubs **asynchronously in parallel**, reducing total runtime from 8× down to roughly 1× overall loading time.
 
-reducing total runtime from 8× down to roughly 1× overall loading time.
-
-> Each club runs in its own Edge browser instance (via zendriver).
->
-> Expect brief multiple Edge popups — this is normal.
+- Each club runs in its own Edge browser instance (via zendriver).
+- Expect brief multiple Edge popups — this is normal.
 
 ---
 
@@ -69,5 +71,44 @@ reducing total runtime from 8× down to roughly 1× overall loading time.
 Install dependencies:
 
 ```
+
 pip install -r requirements.txt
+
+```
+
+**You’ll need:**
+
+- Python 3.11+
+- Microsoft Edge
+- A valid Google Cloud service account with **Sheets API** enabled
+
+---
+
+## 🛠 Build to EXE (Windows)
+
+To bundle everything into one executable:
+
+```
+
+python -m PyInstaller --onefile main.py
+
+```
+
+Output file:
+
+```
+
+dist/main.exe
+
+```
+
+You can run it directly or through Script_run.bat.
+
+---
+
+## 🪶 Notes
+
+- If you want to change your output Google Sheet, edit `SHEET_ID` in `globals.py`
+- The script automatically deletes and recreates each sheet before exporting
+- To limit simultaneous exports (for lower-end PCs), you can add a concurrency cap in `main()`
 ```
