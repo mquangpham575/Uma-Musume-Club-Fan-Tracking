@@ -1,3 +1,5 @@
+SHEET_ID = "1O09PM-hYo-H05kWWqMg71GelEpfaGrePQWzdDCKOqyU"
+
 CLUBS = {
     "1": {
         "title": "ENDGAME S",

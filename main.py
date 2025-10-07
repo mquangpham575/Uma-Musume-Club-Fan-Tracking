@@ -8,12 +8,10 @@ import zendriver as zd
 import gspread
 from google.oauth2.service_account import Credentials
 
-from globals import CLUBS  # external config for club list/URLs/thresholds
+from globals import CLUBS, SHEET_ID
 
 
 # ========== Google Sheets config ==========
-SHEET_ID = "1O09PM-hYo-H05kWWqMg71GelEpfaGrePQWzdDCKOqyU"
-
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 CREDS = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
 GC = gspread.authorize(CREDS)

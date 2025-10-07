@@ -1,32 +1,52 @@
-# **📄 Uma Club Tracking**
+# **📄 Uma Club Tracking — Chronogenesis Exporter (Preview 3.0)**
 
-Chronogenesis Data Exporter
-
-This project fetches club friend history data from https://chronogenesis.net/ and exports it into a clean, formatted Excel file with borders, average calculation, and conditional formatting.
+This project fetches **club friend history data** from [ChronoGenesis](https://chronogenesis.net/)  
+and automatically exports it into a **formatted Google Spreadsheet** — complete with borders, totals, averages, and conditional formatting.
 
 **Preview**
 ![preview](assets/preview.png)
 
-For the **Endless** community, simply use the `.exe` file available in **[Releases](../../releases)** — no setup required.
+For the **Endless** community, you can directly use the `.exe` from **[Releases](../../releases)** — no setup needed.
 
-**⚙️ Setup**
+---
 
-1. Click the green Code button (top-right) → Download ZIP.
-2. Extract the folder somewhere on your computer.
-3. Open globals.py and update any values you want, for example:
+## ⚙️ Setup
 
+1. Click the green **Code** button → **Download ZIP**
+2. Extract the folder anywhere on your computer
+3. Place your **Google API credentials** file as `credentials.json` in the same directory
+4. Open `globals.py` and edit these values if needed:
+
+```python
+SHEET_ID = "1O09PM-hYo-H05kWWqMg71GelEpfaGrePQWzdDCKOqyU"
+
+CLUBS = {
+    "1": {"title": "EndGame", "URL": "https://chronogenesis.net/club_profile?circle_id=endgame", "THRESHOLD": 1800000},
+    ...
+}
+
+## ▶️ Usage
+
+Simply double-click:
+"Script_run.bat"
+Then choose:
+""=== Choose a club to export ===
+1. EndGame
+2. AnotherClub
+...
+0. Export ALL clubs (default)
+Enter 0–7 [default=0]:""
+   Press Enter / 0: export all clubs in parallel
+   Enter a number: export a single club only
+Each club will appear as a separate sheet inside your Google Spreadsheet.
+## 🧾 Export Details
+
+- Header & totals → **bold, white text on blue background**
+- Alternating light rows for readability
+- Automatic borders around all cells
+- Conditional colors:
+    - 🔴 **Red** → value below threshold
+    - ⚪ **Grey** → blank cell
+- `Member_Name` column auto-sized (fits filter icon)
+- Adds a **Total** column & row automatically
 ```
-   URL = "https://chronogenesis.net/club_profile?circle_id=endgame"
-   THRESHOLD = 1800000
-   EXCEL_NAME = "chronogenesis_endgame_export.xlsx"
-```
-
-**▶️ Usage**  
-Just double-click `Script_run.bat` from File Explorer.
-
-**🛠 Build to EXE (Windows only)**  
-To package into a single .exe:
-`python -m PyInstaller --onefile main.py`  
-The executable will be in dist/main.exe.
-
-![hehe](assets/image.png)
