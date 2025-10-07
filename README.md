@@ -16,9 +16,11 @@ For the **Endless** community, place your `credentials.json` file in the same fo
 2. Extract the folder anywhere on your computer
 3. Follow this video tutorial to create your Google API credentials:
    ▶️ https://youtu.be/zCEJurLGFRk
-   Watch from 1:59 → 6:50 to generate your Service Account key
-   Then rename the file to credentials.json and place it in the same folder as main.py
-   Make sure to share your target Google Sheet with the service account’s client_email (Editor access).
+
+- Watch from 1:59 → 6:50 to generate your Service Account key
+- Then rename the file to credentials.json and place it in the same folder as main.py  
+  Make sure to share your target Google Sheet with the service account’s client_email (Editor access).
+
 4. Open `globals.py` and edit these values if needed:
 
 ```
