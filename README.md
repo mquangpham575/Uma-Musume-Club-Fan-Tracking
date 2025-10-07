@@ -17,12 +17,14 @@ For the **Endless** community, you can directly use the `.exe` from **[Releases]
 3. Place your **Google API credentials** file as `credentials.json` in the same directory
 4. Open `globals.py` and edit these values if needed:
 
-````SHEET_ID = "1O09PM-hYo-H05kWWqMg71GelEpfaGrePQWzdDCKOqyU"
+```
+SHEET_ID = "1O09PM-hYo-H05kWWqMg71GelEpfaGrePQWzdDCKOqyU"
 
 CLUBS = {
 "1": {"title": "EndGame", "URL": "https://chronogenesis.net/club_profile?circle_id=endgame", "THRESHOLD": 1800000},
 ...
-}```
+}
+```
 
 ## ▶️ Usage
 
@@ -112,3 +114,4 @@ You can run it directly or through Script_run.bat.
 - The script automatically deletes and recreates each sheet before exporting
 - To limit simultaneous exports (for lower-end PCs), you can add a concurrency cap in `main()`
 ```
+````
