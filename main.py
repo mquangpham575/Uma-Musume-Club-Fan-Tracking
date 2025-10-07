@@ -12,7 +12,7 @@ from globals import CLUBS  # external config for club list/URLs/thresholds
 
 
 # ========== Google Sheets config ==========
-SHEET_ID = "1dA2gLLQY5RA23gWFunytA50xXOQ5oPgKb1TjqVCTNlk"
+SHEET_ID = "1O09PM-hYo-H05kWWqMg71GelEpfaGrePQWzdDCKOqyU"
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 CREDS = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
@@ -24,9 +24,9 @@ def pick_club() -> dict | str:
     print("=== Choose a club to export ===")
     for key, cfg in CLUBS.items():
         print(f"{key}. {cfg['title']}")
-    print("0. Export ALL clubs")
-    choice = input("Enter 0–7: ").strip()
-    if choice == "0":
+    print("0. Export ALL clubs (default)")
+    choice = input("Enter 0–7 [default=0]: ").strip()
+    if choice == "" or choice == "0":
         return "ALL"
     if choice not in CLUBS:
         print("Invalid choice, defaulting to 1.")
@@ -103,6 +103,7 @@ def build_dataframe(data: dict) -> pd.DataFrame:
 def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, threshold: int):
     from gspread.utils import rowcol_to_a1
 
+    # ====== PREP DATA ======
     GAP_COL = " "
     dcols = [c for c in df.columns if isinstance(c, str) and c.startswith("Day ")]
     df_to_write = df.copy()
@@ -128,6 +129,7 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
     totals_row = [("" if pd.isna(v) else v) for v in (bottom_totals.get(c, "") for c in df_to_write.columns)]
     values = [header] + data_rows + [totals_row]
 
+    # ====== OPEN SHEET ======
     ss = GC.open_by_key(spreadsheet_id)
     for ws in ss.worksheets():
         if ws.title == sheet_title:
@@ -135,43 +137,63 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
             break
     ws = ss.add_worksheet(title=sheet_title, rows=max(len(values) + 50, 100), cols=max(len(header) + 10, 26))
 
+    # Write values
     end_row = len(values)
     end_col = len(header)
     end_a1 = rowcol_to_a1(end_row, end_col)
     ws.update(values, f"A1:{end_a1}")
 
-    # ===== FORMATTING =====
+    # ====== FORMATTING ======
     sheet_id = ws._properties["sheetId"]
-    last_data_row_1based = 1 + len(data_rows)
+    last_data_row_1based = 1 + len(data_rows)  # header + data, totals excluded
 
     header_range = {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": end_col}
     totals_range = {"sheetId": sheet_id, "startRowIndex": end_row - 1, "endRowIndex": end_row, "startColumnIndex": 0, "endColumnIndex": end_col}
-    blank_col_range = {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": end_row, "startColumnIndex": gidx, "endColumnIndex": gidx + 1} if gidx is not None else None
     header_plus_data_range = {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": last_data_row_1based, "startColumnIndex": 0, "endColumnIndex": end_col}
-    data_rows_range = {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": last_data_row_1based, "startColumnIndex": 0, "endColumnIndex": end_col}
+    band_left = {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": last_data_row_1based, "startColumnIndex": 0, "endColumnIndex": (gidx if gidx is not None else end_col)}
+    band_right = {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": last_data_row_1based,
+                  "startColumnIndex": (gidx + 1 if gidx is not None else end_col), "endColumnIndex": end_col}
     full_table_range = {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": end_row, "startColumnIndex": 0, "endColumnIndex": end_col}
 
     skip = {"Member_ID", "Member_Name", GAP_COL}
     numeric_cols_1 = [i + 1 for i, c in enumerate(header) if c not in skip]
 
-    def col_data_grid(col_1):
-        return {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": last_data_row_1based, "startColumnIndex": col_1 - 1, "endColumnIndex": col_1}
-    numeric_ranges = [col_data_grid(c1) for c1 in numeric_cols_1]
+    def col_range_rows(start_row_1, end_row_1, col_1):
+        return {"sheetId": sheet_id, "startRowIndex": start_row_1 - 1, "endRowIndex": end_row_1,
+                "startColumnIndex": col_1 - 1, "endColumnIndex": col_1}
 
-    blue_fill = {"red": 0.31, "green": 0.51, "blue": 0.74}
+    numeric_ranges_data = [col_range_rows(2, last_data_row_1based, c1) for c1 in numeric_cols_1]
+    numeric_ranges_all = [col_range_rows(2, end_row, c1) for c1 in numeric_cols_1]
+
+    blue_fill  = {"red": 0.31, "green": 0.51, "blue": 0.74}
     white_font = {"red": 1, "green": 1, "blue": 1}
     red_fill   = {"red": 1.00, "green": 0.78, "blue": 0.81}
     grey_fill  = {"red": 0.75, "green": 0.75, "blue": 0.75}
+    band_light = {"red": 0.86, "green": 0.92, "blue": 0.97}
+    band_very  = {"red": 0.95, "green": 0.97, "blue": 0.98}
+
+    number_format = {"type": "NUMBER", "pattern": "#,##0"}
 
     requests = [
         {"setBasicFilter": {"filter": {"range": header_plus_data_range}}},
+
+        # Header styling: bold, blue, centered
         {
             "repeatCell": {
                 "range": header_range,
-                "cell": {"userEnteredFormat": {"backgroundColor": blue_fill, "textFormat": {"bold": True, "foregroundColor": white_font}}},
-                "fields": "userEnteredFormat(backgroundColor,textFormat)"
+                "cell": {
+                    "userEnteredFormat": {
+                        "backgroundColor": blue_fill,
+                        "textFormat": {"bold": True, "foregroundColor": white_font},
+                        "horizontalAlignment": "CENTER",
+                        "verticalAlignment": "MIDDLE"
+                    }
+                },
+                "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)"
             }
         },
+
+        # Totals styling
         {
             "repeatCell": {
                 "range": totals_range,
@@ -179,10 +201,12 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
                 "fields": "userEnteredFormat(backgroundColor,textFormat)"
             }
         },
+
+        # GAP column blue & narrow
         *([
             {
                 "repeatCell": {
-                    "range": blank_col_range,
+                    "range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": end_row, "startColumnIndex": gidx, "endColumnIndex": gidx + 1},
                     "cell": {"userEnteredFormat": {"backgroundColor": blue_fill}},
                     "fields": "userEnteredFormat.backgroundColor"
                 }
@@ -194,19 +218,56 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
                     "fields": "pixelSize"
                 }
             }
-        ] if blank_col_range else []),
+        ] if gidx is not None else []),
+
+        # Alternating banded rows
+        *([
+            {
+                "addBanding": {
+                    "bandedRange": {
+                        "range": band_left,
+                        "rowProperties": {"firstBandColor": band_light, "secondBandColor": band_very}
+                    }
+                }
+            }
+        ] if gidx is None or gidx > 0 else []),
+        *([
+            {
+                "addBanding": {
+                    "bandedRange": {
+                        "range": band_right,
+                        "rowProperties": {"firstBandColor": band_light, "secondBandColor": band_very}
+                    }
+                }
+            }
+        ] if gidx is not None and gidx + 1 < end_col else []),
+
+        # Number formatting
+        *[
+            {
+                "repeatCell": {
+                    "range": r,
+                    "cell": {"userEnteredFormat": {"numberFormat": number_format}},
+                    "fields": "userEnteredFormat.numberFormat"
+                }
+            } for r in numeric_ranges_all
+        ],
+
+        # Conditional red + grey
         {
             "addConditionalFormatRule": {
-                "rule": {"ranges": numeric_ranges, "booleanRule": {"condition": {"type": "NUMBER_LESS", "values": [{"userEnteredValue": str(threshold)}]}, "format": {"backgroundColor": red_fill}}},
+                "rule": {"ranges": numeric_ranges_data, "booleanRule": {"condition": {"type": "NUMBER_LESS", "values": [{"userEnteredValue": str(threshold)}]}, "format": {"backgroundColor": red_fill}}},
                 "index": 0
             }
         },
         {
             "addConditionalFormatRule": {
-                "rule": {"ranges": numeric_ranges, "booleanRule": {"condition": {"type": "BLANK"}, "format": {"backgroundColor": grey_fill}}},
+                "rule": {"ranges": numeric_ranges_data, "booleanRule": {"condition": {"type": "BLANK"}, "format": {"backgroundColor": grey_fill}}},
                 "index": 0
             }
         },
+
+        # Borders on all cells
         {
             "updateBorders": {
                 "range": full_table_range,
@@ -220,22 +281,46 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
         },
     ]
 
-    ws.spreadsheet.batch_update({"requests": requests})
-    print(f"✅ Exported '{sheet_title}' ({end_row} rows × {end_col} cols)")
+    # === Make Member_Name column wider (for filter icon space)
+    if "Member_Name" in header:
+        name_col_index = header.index("Member_Name")
+        requests.append({
+            "updateDimensionProperties": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "dimension": "COLUMNS",
+                    "startIndex": name_col_index,
+                    "endIndex": name_col_index + 1
+                },
+                "properties": {"pixelSize": 140}, 
+                "fields": "pixelSize"
+            }
+        })
 
+    ws.spreadsheet.batch_update({"requests": requests})
 
 # === Main ===
 async def main():
     choice = pick_club()
 
     if choice == "ALL":
-        print("\nExporting ALL clubs...\n")
-        for key, cfg in CLUBS.items():
-            print(f"→ Exporting {cfg['title']} ...")
-            data = await fetch_json(cfg["URL"])
-            df = build_dataframe(data)
-            export_to_gsheets(df, spreadsheet_id=SHEET_ID, sheet_title=cfg["title"], threshold=cfg["THRESHOLD"])
-        print("\n✅ All clubs exported successfully!")
+        print("\n⚡ Exporting ALL clubs in parallel...\n")
+
+        async def process_club(key: str, cfg: dict):
+            print(f"→ Fetching {cfg['title']} ...")
+            try:
+                data = await fetch_json(cfg["URL"])
+                df = build_dataframe(data)
+                export_to_gsheets(df, spreadsheet_id=SHEET_ID, sheet_title=cfg["title"], threshold=cfg["THRESHOLD"])
+                print(f"✅ {cfg['title']} exported.")
+            except Exception as e:
+                print(f"❌ {cfg['title']} failed: {e}")
+
+        # Run all fetch/export tasks concurrently
+        tasks = [process_club(key, cfg) for key, cfg in CLUBS.items()]
+        await asyncio.gather(*tasks)
+
+        print("\n🎉 All clubs exported successfully (parallel mode)!")
     else:
         cfg = choice
         print(f"\nSelected: {cfg['title']}\nURL: {cfg['URL']}\nSheet: {SHEET_ID}\nThreshold: {cfg['THRESHOLD']}\n")
@@ -243,7 +328,6 @@ async def main():
         df = build_dataframe(data)
         export_to_gsheets(df, spreadsheet_id=SHEET_ID, sheet_title=cfg["title"], threshold=cfg["THRESHOLD"])
         print(f"✅ Exported single club '{cfg['title']}' successfully!")
-
 
 if __name__ == "__main__":
     asyncio.run(main())
