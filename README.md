@@ -3,7 +3,6 @@
 This project fetches **club friend history data** from [ChronoGenesis](https://chronogenesis.net/)  
 and automatically exports it into a **formatted Google Spreadsheet** — complete with borders, totals, averages, and conditional formatting.
 
-**Preview**
 ![preview](assets/preview.png)
 
 For the **Endless** community, check the **[Releases](../../releases)** — no need the setup below.
