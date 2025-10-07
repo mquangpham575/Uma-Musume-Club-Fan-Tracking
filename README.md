@@ -26,6 +26,8 @@ CLUBS = {
 }
 ```
 
+---
+
 ## ▶️ Usage
 
 Simply double-click:
@@ -48,6 +50,8 @@ Then choose:
 - Enter a number: export a single club only
 - Each club will appear as a separate sheet inside your Google Spreadsheet.
 
+---
+
 ## 🧾 Export Details
 
 - Header & totals → **bold, white text on blue background**
@@ -58,6 +62,8 @@ Then choose:
   - ⚪ **Grey** → blank cell
 - `Member_Name` column auto-sized (fits filter icon)
 - Adds a **Total** column & row automatically
+
+---
 
 ## ⚡ Parallel Mode
 
@@ -113,7 +119,3 @@ You can run it directly or through Script_run.bat.
 - If you want to change your output Google Sheet, edit `SHEET_ID` in `globals.py`
 - The script automatically deletes and recreates each sheet before exporting
 - To limit simultaneous exports (for lower-end PCs), you can add a concurrency cap in `main()`
-
-```
-
-```
