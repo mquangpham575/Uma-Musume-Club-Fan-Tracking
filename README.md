@@ -32,13 +32,14 @@ Then choose:
 '''=== Choose a club to export ===
 
 1. EndGame
-2. AnotherClub
+2. AnotherClub  
    ...
 3. Export ALL clubs (default)
    Enter 0–7 [default=0]:'''
-   Press Enter / 0: export all clubs in parallel
-   Enter a number: export a single club only
-   Each club will appear as a separate sheet inside your Google Spreadsheet.
+
+- Press Enter / 0: export all clubs in parallel
+- Enter a number: export a single club only
+- Each club will appear as a separate sheet inside your Google Spreadsheet.
 
 ## 🧾 Export Details
 
