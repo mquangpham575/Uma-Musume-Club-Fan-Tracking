@@ -106,6 +106,7 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
     dcols = [c for c in df.columns if isinstance(c, str) and c.startswith("Day ")]
     df_to_write = df.copy()
 
+    # Add Total and a blue gap column before it
     if dcols:
         df_to_write["Total"] = df_to_write[dcols].sum(axis=1, min_count=1)
         gidx = df_to_write.columns.get_loc("Total")
@@ -113,6 +114,7 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
     else:
         gidx = None
 
+    # Bottom "Total" row (sum) — same as before
     bottom_totals = {}
     for c in df_to_write.columns:
         if c == "Member_Name":
@@ -122,10 +124,21 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
         else:
             bottom_totals[c] = pd.to_numeric(df_to_write[c], errors="coerce").sum(min_count=1)
 
+    # Day AVG row — per-day means only
+    day_avgs = pd.Series("", index=df_to_write.columns, dtype=object)
+    if dcols:
+        means = df_to_write[dcols].mean(axis=0, skipna=True).round(0)
+        for c in dcols:
+            day_avgs[c] = means.get(c, "")
+    day_avgs["Member_Name"] = "Day AVG"
+
     header = list(map(str, df_to_write.columns))
     data_rows = df_to_write.where(pd.notna(df_to_write), "").values.tolist()
     totals_row = [("" if pd.isna(v) else v) for v in (bottom_totals.get(c, "") for c in df_to_write.columns)]
-    values = [header] + data_rows + [totals_row]
+    day_avg_row = [day_avgs.get(c, "") for c in df_to_write.columns]
+
+    # Values order: header, data..., Total, Day AVG
+    values = [header] + data_rows + [totals_row, day_avg_row]
 
     # ====== OPEN SHEET ======
     ss = GC.open_by_key(spreadsheet_id)
@@ -133,7 +146,7 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
         if ws.title == sheet_title:
             ss.del_worksheet(ws)
             break
-    ws = ss.add_worksheet(title=sheet_title, rows=max(len(values) + 50, 100), cols=max(len(header) + 10, 26))
+    ws = ss.add_worksheet(title=sheet_title, rows=max(len(values) + 50, 120), cols=max(len(header) + 10, 26))
 
     # Write values
     end_row = len(values)
@@ -143,25 +156,37 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
 
     # ====== FORMATTING ======
     sheet_id = ws._properties["sheetId"]
-    last_data_row_1based = 1 + len(data_rows)  # header + data, totals excluded
+    last_data_row_1based = 1 + len(data_rows)  # header + data (excludes the 2 summary rows)
 
     header_range = {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": end_col}
-    totals_range = {"sheetId": sheet_id, "startRowIndex": end_row - 1, "endRowIndex": end_row, "startColumnIndex": 0, "endColumnIndex": end_col}
+    totals_range = {"sheetId": sheet_id, "startRowIndex": end_row - 2, "endRowIndex": end_row, "startColumnIndex": 0, "endColumnIndex": end_col}  # style both Total + Day AVG
     header_plus_data_range = {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": last_data_row_1based, "startColumnIndex": 0, "endColumnIndex": end_col}
     band_left = {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": last_data_row_1based, "startColumnIndex": 0, "endColumnIndex": (gidx if gidx is not None else end_col)}
     band_right = {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": last_data_row_1based,
                   "startColumnIndex": (gidx + 1 if gidx is not None else end_col), "endColumnIndex": end_col}
     full_table_range = {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": end_row, "startColumnIndex": 0, "endColumnIndex": end_col}
 
-    skip = {"Member_ID", "Member_Name", GAP_COL}
-    numeric_cols_1 = [i + 1 for i, c in enumerate(header) if c not in skip]
+    # Column indices (1-based) for helpers
+    def col_1_based(col_name: str) -> int | None:
+        try:
+            return header.index(col_name) + 1
+        except ValueError:
+            return None
+
+    # Numeric formatting applies to all numeric columns except id/name/gap
+    skip_for_number = {"Member_ID", "Member_Name", GAP_COL}
+    numeric_cols_1 = [i + 1 for i, c in enumerate(header) if c not in skip_for_number]
+
+    # Conditional threshold applies ONLY to Day columns (not Rank/AVG/d/Total)
+    day_cols_1 = [col_1_based(c) for c in dcols]
+    day_cols_1 = [c1 for c1 in day_cols_1 if c1 is not None]
 
     def col_range_rows(start_row_1, end_row_1, col_1):
         return {"sheetId": sheet_id, "startRowIndex": start_row_1 - 1, "endRowIndex": end_row_1,
                 "startColumnIndex": col_1 - 1, "endColumnIndex": col_1}
 
-    numeric_ranges_data = [col_range_rows(2, last_data_row_1based, c1) for c1 in numeric_cols_1]
     numeric_ranges_all = [col_range_rows(2, end_row, c1) for c1 in numeric_cols_1]
+    numeric_ranges_data_days = [col_range_rows(2, last_data_row_1based, c1) for c1 in day_cols_1]
 
     blue_fill  = {"red": 0.31, "green": 0.51, "blue": 0.74}
     white_font = {"red": 1, "green": 1, "blue": 1}
@@ -169,29 +194,26 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
     grey_fill  = {"red": 0.75, "green": 0.75, "blue": 0.75}
     band_light = {"red": 0.86, "green": 0.92, "blue": 0.97}
     band_very  = {"red": 0.95, "green": 0.97, "blue": 0.98}
-
     number_format = {"type": "NUMBER", "pattern": "#,##0"}
 
     requests = [
         {"setBasicFilter": {"filter": {"range": header_plus_data_range}}},
 
-        # Header styling: bold, blue, centered
+        # Header styling
         {
             "repeatCell": {
                 "range": header_range,
-                "cell": {
-                    "userEnteredFormat": {
-                        "backgroundColor": blue_fill,
-                        "textFormat": {"bold": True, "foregroundColor": white_font},
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE"
-                    }
-                },
+                "cell": {"userEnteredFormat": {
+                    "backgroundColor": blue_fill,
+                    "textFormat": {"bold": True, "foregroundColor": white_font},
+                    "horizontalAlignment": "CENTER",
+                    "verticalAlignment": "MIDDLE"
+                }},
                 "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)"
             }
         },
 
-        # Totals styling
+        # Style both "Total" and "Day AVG" rows
         {
             "repeatCell": {
                 "range": totals_range,
@@ -218,52 +240,33 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
             }
         ] if gidx is not None else []),
 
-        # Alternating banded rows
+        # Alternating banded rows (data only)
         *([
-            {
-                "addBanding": {
-                    "bandedRange": {
-                        "range": band_left,
-                        "rowProperties": {"firstBandColor": band_light, "secondBandColor": band_very}
-                    }
-                }
-            }
+            {"addBanding": {"bandedRange": {"range": band_left,  "rowProperties": {"firstBandColor": band_light, "secondBandColor": band_very}}}}
         ] if gidx is None or gidx > 0 else []),
         *([
-            {
-                "addBanding": {
-                    "bandedRange": {
-                        "range": band_right,
-                        "rowProperties": {"firstBandColor": band_light, "secondBandColor": band_very}
-                    }
-                }
-            }
+            {"addBanding": {"bandedRange": {"range": band_right, "rowProperties": {"firstBandColor": band_light, "secondBandColor": band_very}}}}
         ] if gidx is not None and gidx + 1 < end_col else []),
 
-        # Number formatting
+        # Number formatting for all numeric columns (Rank, AVG/d, Day N, Total)
         *[
-            {
-                "repeatCell": {
-                    "range": r,
-                    "cell": {"userEnteredFormat": {"numberFormat": number_format}},
-                    "fields": "userEnteredFormat.numberFormat"
-                }
-            } for r in numeric_ranges_all
+            {"repeatCell": {"range": r, "cell": {"userEnteredFormat": {"numberFormat": number_format}}, "fields": "userEnteredFormat.numberFormat"}}
+            for r in numeric_ranges_all
         ],
 
-        # Conditional red + grey
-        {
+        # Conditional red (below threshold) + grey (blanks) — ONLY for Day N columns, data rows
+        *([{
             "addConditionalFormatRule": {
-                "rule": {"ranges": numeric_ranges_data, "booleanRule": {"condition": {"type": "NUMBER_LESS", "values": [{"userEnteredValue": str(threshold)}]}, "format": {"backgroundColor": red_fill}}},
+                "rule": {"ranges": numeric_ranges_data_days, "booleanRule": {"condition": {"type": "NUMBER_LESS", "values": [{"userEnteredValue": str(threshold)}]}, "format": {"backgroundColor": red_fill}}},
                 "index": 0
             }
-        },
-        {
+        }] if numeric_ranges_data_days else []),
+        *([{
             "addConditionalFormatRule": {
-                "rule": {"ranges": numeric_ranges_data, "booleanRule": {"condition": {"type": "BLANK"}, "format": {"backgroundColor": grey_fill}}},
+                "rule": {"ranges": numeric_ranges_data_days, "booleanRule": {"condition": {"type": "BLANK"}, "format": {"backgroundColor": grey_fill}}},
                 "index": 0
             }
-        },
+        }] if numeric_ranges_data_days else []),
 
         # Borders on all cells
         {
@@ -279,21 +282,24 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
         },
     ]
 
-    # === Make Member_Name column wider (for filter icon space)
+    # Wider Member_Name (for filter icon space)
     if "Member_Name" in header:
         name_col_index = header.index("Member_Name")
         requests.append({
             "updateDimensionProperties": {
-                "range": {
-                    "sheetId": sheet_id,
-                    "dimension": "COLUMNS",
-                    "startIndex": name_col_index,
-                    "endIndex": name_col_index + 1
-                },
-                "properties": {"pixelSize": 140}, 
+                "range": {"sheetId": sheet_id, "dimension": "COLUMNS", "startIndex": name_col_index, "endIndex": name_col_index + 1},
+                "properties": {"pixelSize": 140},
                 "fields": "pixelSize"
             }
         })
+
+    # Optional: freeze header row
+    requests.append({
+        "updateSheetProperties": {
+            "properties": {"sheetId": sheet_id, "gridProperties": {"frozenRowCount": 1}},
+            "fields": "gridProperties.frozenRowCount"
+        }
+    })
 
     ws.spreadsheet.batch_update({"requests": requests})
 
