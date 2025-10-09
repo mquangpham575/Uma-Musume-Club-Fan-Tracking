@@ -83,7 +83,8 @@ def build_dataframe(data: dict) -> pd.DataFrame:
             return None
 
     day_cols = [c for c in df.columns if isinstance(c, str) and c.startswith("Day ")]
-    # --- NEW: keep only members who have value on the newest day (max Day N) ---
+
+    # --- Keep only members who have value on the newest day (max Day N) ---
     nums = [n for n in map(_day_num, day_cols) if n is not None]
     if nums:
         latest_day = max(nums)
@@ -136,7 +137,7 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
         else:
             bottom_totals[c] = pd.to_numeric(df_to_write[c], errors="coerce").sum(min_count=1)
 
-    # Day AVG row — per-day means only
+    # Day AVG row — per-day means only (no AVG/d)
     day_avgs = pd.Series("", index=df_to_write.columns, dtype=object)
     if dcols:
         means = df_to_write[dcols].mean(axis=0, skipna=True).round(0)
@@ -171,25 +172,25 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
     last_data_row_1based = 1 + len(data_rows)  # header + data (excludes the 2 summary rows)
 
     header_range = {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": end_col}
-    totals_range = {"sheetId": sheet_id, "startRowIndex": end_row - 2, "endRowIndex": end_row, "startColumnIndex": 0, "endColumnIndex": end_col}  # style both Total + Day AVG
+    totals_range = {"sheetId": sheet_id, "startRowIndex": end_row - 2, "endRowIndex": end_row, "startColumnIndex": 0, "endColumnIndex": end_col}
     header_plus_data_range = {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": last_data_row_1based, "startColumnIndex": 0, "endColumnIndex": end_col}
     band_left = {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": last_data_row_1based, "startColumnIndex": 0, "endColumnIndex": (gidx if gidx is not None else end_col)}
     band_right = {"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": last_data_row_1based,
                   "startColumnIndex": (gidx + 1 if gidx is not None else end_col), "endColumnIndex": end_col}
     full_table_range = {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": end_row, "startColumnIndex": 0, "endColumnIndex": end_col}
 
-    # Column indices (1-based) for helpers
+    # Column index helpers
     def col_1_based(col_name: str) -> int | None:
         try:
             return header.index(col_name) + 1
         except ValueError:
             return None
 
-    # Numeric formatting applies to all numeric columns except id/name/gap
+    # Number formatting applies to all numeric columns except id/name/gap
     skip_for_number = {"Member_ID", "Member_Name", GAP_COL}
     numeric_cols_1 = [i + 1 for i, c in enumerate(header) if c not in skip_for_number]
 
-    # Conditional threshold applies ONLY to Day columns (not AVG/d/Total)
+    # Conditional threshold: Day columns + AVG/d (data rows only).
     day_cols_1 = [col_1_based(c) for c in dcols]
     day_cols_1 = [c1 for c1 in day_cols_1 if c1 is not None]
 
@@ -199,6 +200,12 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
 
     numeric_ranges_all = [col_range_rows(2, end_row, c1) for c1 in numeric_cols_1]
     numeric_ranges_data_days = [col_range_rows(2, last_data_row_1based, c1) for c1 in day_cols_1]
+
+    # NEW: add AVG/d to the threshold-based red rule (data rows only)
+    avgd_col_1 = col_1_based("AVG/d")
+    numeric_ranges_data = list(numeric_ranges_data_days)
+    if avgd_col_1 is not None:
+        numeric_ranges_data.append(col_range_rows(2, last_data_row_1based, avgd_col_1))
 
     blue_fill  = {"red": 0.31, "green": 0.51, "blue": 0.74}
     white_font = {"red": 1, "green": 1, "blue": 1}
@@ -266,16 +273,23 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
             for r in numeric_ranges_all
         ],
 
-        # Conditional red (below threshold) + grey (blanks) — ONLY for Day N columns, data rows
+        # Conditional red (below threshold) — Day N columns + AVG/d, data rows only
         *([{
             "addConditionalFormatRule": {
-                "rule": {"ranges": numeric_ranges_data_days, "booleanRule": {"condition": {"type": "NUMBER_LESS", "values": [{"userEnteredValue": str(threshold)}]}, "format": {"backgroundColor": red_fill}}},
+                "rule": {"ranges": numeric_ranges_data,
+                         "booleanRule": {"condition": {"type": "NUMBER_LESS",
+                                                       "values": [{"userEnteredValue": str(threshold)}]},
+                                         "format": {"backgroundColor": red_fill}}},
                 "index": 0
             }
-        }] if numeric_ranges_data_days else []),
+        }] if numeric_ranges_data else []),
+
+        # Conditional grey (blanks) — ONLY for Day N columns, data rows
         *([{
             "addConditionalFormatRule": {
-                "rule": {"ranges": numeric_ranges_data_days, "booleanRule": {"condition": {"type": "BLANK"}, "format": {"backgroundColor": grey_fill}}},
+                "rule": {"ranges": numeric_ranges_data_days,
+                         "booleanRule": {"condition": {"type": "BLANK"},
+                                         "format": {"backgroundColor": grey_fill}}},
                 "index": 0
             }
         }] if numeric_ranges_data_days else []),
@@ -305,7 +319,7 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
             }
         })
 
-    # Optional: freeze header row
+    # Freeze header
     requests.append({
         "updateSheetProperties": {
             "properties": {"sheetId": sheet_id, "gridProperties": {"frozenRowCount": 1}},
