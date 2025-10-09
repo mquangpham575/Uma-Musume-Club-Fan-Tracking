@@ -74,15 +74,27 @@ def build_dataframe(data: dict) -> pd.DataFrame:
     )
     df.columns.name = None
 
-    def _day_key(x: str):
-        if not isinstance(x, str) or not x.startswith("Day "): return x
+    def _day_num(x: str):
+        if not isinstance(x, str) or not x.startswith("Day "):
+            return None
         try:
             return int(x.split(maxsplit=1)[1])
         except Exception:
-            return x
+            return None
 
-    day_cols = sorted([c for c in df.columns if isinstance(c, str) and c.startswith("Day ")], key=_day_key)
+    day_cols = [c for c in df.columns if isinstance(c, str) and c.startswith("Day ")]
+    # --- NEW: keep only members who have value on the newest day (max Day N) ---
+    nums = [n for n in map(_day_num, day_cols) if n is not None]
+    if nums:
+        latest_day = max(nums)
+        latest_col = f"Day {latest_day}"
+        if latest_col in df.columns:
+            df = df[~df[latest_col].isna()].copy()
 
+    # Order Day columns numerically
+    day_cols = sorted(day_cols, key=lambda c: (_day_num(c) if _day_num(c) is not None else float("inf")))
+
+    # Compute AVG/d and finalize columns
     df["AVG/d"] = df[day_cols].mean(axis=1).round(0) if day_cols else 0
     df = df[["friend_viewer_id", "friend_name", "AVG/d"] + day_cols].rename(
         columns={"friend_viewer_id": "Member_ID", "friend_name": "Member_Name"}
@@ -114,7 +126,7 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
     else:
         gidx = None
 
-    # Bottom "Total" row (sum) — same as before
+    # Bottom "Total" row (sum)
     bottom_totals = {}
     for c in df_to_write.columns:
         if c == "Member_Name":
@@ -177,7 +189,7 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
     skip_for_number = {"Member_ID", "Member_Name", GAP_COL}
     numeric_cols_1 = [i + 1 for i, c in enumerate(header) if c not in skip_for_number]
 
-    # Conditional threshold applies ONLY to Day columns (not Rank/AVG/d/Total)
+    # Conditional threshold applies ONLY to Day columns (not AVG/d/Total)
     day_cols_1 = [col_1_based(c) for c in dcols]
     day_cols_1 = [c1 for c1 in day_cols_1 if c1 is not None]
 
@@ -248,7 +260,7 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
             {"addBanding": {"bandedRange": {"range": band_right, "rowProperties": {"firstBandColor": band_light, "secondBandColor": band_very}}}}
         ] if gidx is not None and gidx + 1 < end_col else []),
 
-        # Number formatting for all numeric columns (Rank, AVG/d, Day N, Total)
+        # Number formatting for all numeric columns (AVG/d, Day N, Total)
         *[
             {"repeatCell": {"range": r, "cell": {"userEnteredFormat": {"numberFormat": number_format}}, "fields": "userEnteredFormat.numberFormat"}}
             for r in numeric_ranges_all
@@ -303,6 +315,7 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
 
     ws.spreadsheet.batch_update({"requests": requests})
 
+
 # === Main ===
 async def main():
     choice = pick_club()
@@ -332,6 +345,7 @@ async def main():
         df = build_dataframe(data)
         export_to_gsheets(df, spreadsheet_id=SHEET_ID, sheet_title=cfg["title"], threshold=cfg["THRESHOLD"])
         print(f"✅ Exported single club '{cfg['title']}' successfully!")
+
 
 if __name__ == "__main__":
     asyncio.run(main())
