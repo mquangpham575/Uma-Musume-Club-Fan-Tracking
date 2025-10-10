@@ -7,6 +7,7 @@ import pandas as pd
 import zendriver as zd
 import gspread
 from google.oauth2.service_account import Credentials
+import time
 
 from globals import CLUBS, SHEET_ID
 
@@ -41,18 +42,44 @@ def resolve_base_dir() -> Path:
 
 # === Data fetch ===
 async def fetch_json(URL: str):
-    browser = await zd.start(
-        browser="edge",
-        browser_executable_path="C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
-    )
-    page = await browser.get("https://google.com")
-    async with page.expect_request(r".*/api/.*") as req:
-        await page.get(URL)
-        await req.value
-        body, _ = await req.response_body
-    await browser.stop()
-    text = body.decode("utf-8", errors="replace") if isinstance(body, (bytes, bytearray)) else str(body)
-    return json.loads(text)
+    MAX_RETRIES = 3
+    RETRY_DELAY = 5
+    
+    for attempt in range(MAX_RETRIES):
+        browser = None
+        try:
+            browser = await zd.start(
+                browser="edge",
+                browser_executable_path="C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
+            )
+            page = await browser.get("https://google.com")
+            
+            async with page.expect_request(r".*/api/.*") as req:
+                await page.get(URL)
+                await req.value
+                body, _ = await req.response_body
+            
+            text = body.decode("utf-8", errors="replace") if isinstance(body, (bytes, bytearray)) else str(body)
+            return json.loads(text)
+            
+        except (zd.errors.RemoteDisconnectedError, zd.errors.ConnectionAbortedError) as e:
+            print(f"Lỗi kết nối ({URL}, lần {attempt + 1}/{MAX_RETRIES}): {type(e).__name__}. Đang thử lại sau {RETRY_DELAY}s...")
+            if attempt < MAX_RETRIES - 1:
+                if browser:
+                    await browser.stop()
+                await asyncio.sleep(RETRY_DELAY)
+                continue
+            else:
+                raise
+                
+        except Exception as e:
+            raise e
+            
+        finally:
+            if browser:
+                await browser.stop()
+    
+    raise Exception(f"Thất bại sau {MAX_RETRIES} lần thử.")
 
 
 # === DataFrame processing ===
@@ -331,27 +358,35 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
 
 
 # === Main ===
+# === Main ===
 async def main():
     choice = pick_club()
 
     if choice == "ALL":
-        print("\n⚡ Exporting ALL clubs in parallel...\n")
+        print("\n⚡ Xuất TẤT CẢ các club: Tải dữ liệu song song, Xuất sheet tuần tự...\n")
 
-        async def process_club(key: str, cfg: dict):
-            print(f"→ Fetching {cfg['title']} ...")
+        fetch_tasks = {
+            key: asyncio.create_task(fetch_json(cfg["URL"])) 
+            for key, cfg in CLUBS.items()
+        }
+        
+        await asyncio.gather(*fetch_tasks.values())
+        
+        for key, cfg in CLUBS.items():
+            title = cfg["title"]
             try:
-                data = await fetch_json(cfg["URL"])
+                data = fetch_tasks[key].result() 
+                
+                print(f"→ Xử lý và xuất {title}...")
                 df = build_dataframe(data)
-                export_to_gsheets(df, spreadsheet_id=SHEET_ID, sheet_title=cfg["title"], threshold=cfg["THRESHOLD"])
-                print(f"✅ {cfg['title']} exported.")
+                
+                export_to_gsheets(df, spreadsheet_id=SHEET_ID, sheet_title=title, threshold=cfg["THRESHOLD"])
+                print(f"✅ {title} exported.")
             except Exception as e:
-                print(f"❌ {cfg['title']} failed: {e}")
+                print(f"❌ {title} failed: {e}")
 
-        # Run all fetch/export tasks concurrently
-        tasks = [process_club(key, cfg) for key, cfg in CLUBS.items()]
-        await asyncio.gather(*tasks)
-
-        print("\n🎉 All clubs exported successfully (parallel mode)!")
+        print("\n🎉 Tất cả các club đã xuất thành công!")
+    
     else:
         cfg = choice
         print(f"\nSelected: {cfg['title']}\nURL: {cfg['URL']}\nSheet: {SHEET_ID}\nThreshold: {cfg['THRESHOLD']}\n")
@@ -363,3 +398,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
