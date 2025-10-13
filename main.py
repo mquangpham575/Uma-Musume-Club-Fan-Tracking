@@ -54,7 +54,7 @@ async def fetch_json(URL: str):
             )
             page = await browser.get("https://google.com")
             
-            async with page.expect_request(r".*/api/.*") as req:
+            async with page.expect_request(r".*\/api\/club_profile.*") as req:
                 await page.get(URL)
                 await req.value
                 body, _ = await req.response_body
