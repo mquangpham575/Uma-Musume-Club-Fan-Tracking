@@ -356,111 +356,187 @@ def export_to_gsheets(df: pd.DataFrame, spreadsheet_id: str, sheet_title: str, t
 
     ws.spreadsheet.batch_update({"requests": requests})
 
+# === Core Export Logic (Single Club) ===
+async def process_and_export_club(cfg: dict, data_or_task_result=None):
+    title = cfg['title']
+    
+    # If data_or_task_result is an Exception (initial fetch error) or needs re-fetching
+    if isinstance(data_or_task_result, Exception) or data_or_task_result is None:
+        print(f"    (Re-fetching data for {title}...)")
+        # This calls the fetch_json function, which contains its own 3-retry logic for connection errors
+        data = await fetch_json(cfg["URL"]) 
+    else:
+        # If data was successfully fetched during the initial concurrent run
+        data = data_or_task_result
+
+    # Process and export
+    df = build_dataframe(data)
+    export_to_gsheets(df, spreadsheet_id=SHEET_ID, sheet_title=title, threshold=cfg["THRESHOLD"])
+    return True
 
 # === Main ===
 async def main():
     choice = pick_club()
-
+    
+    # Define retry parameters
+    MAX_CLUB_RETRIES = 3  
+    CLUB_RETRY_DELAY = 5
+    
     if choice == "ALL":
-        print("\n⚡ Exporting ALL clubs: Concurrent data fetch, Sequential sheet export...\n")
-
-        # 1. Start concurrent fetch tasks
+        print("\n⚡ Exporting ALL clubs: Concurrent data fetching, Sequential processing/Export with in-place retry to maintain order...\n")
+        
+        # 1. Concurrent data fetching
+        print("--- 1. Fetching All Data Concurrently ---")
         fetch_tasks = {
             key: asyncio.create_task(fetch_json(cfg["URL"])) 
             for key, cfg in CLUBS.items()
         }
         
-        # Wait for all data fetching to complete, capturing exceptions
-        await asyncio.gather(*fetch_tasks.values(), return_exceptions=True)
+        # Wait for all to complete (store results or exceptions)
+        results = await asyncio.gather(*fetch_tasks.values(), return_exceptions=True)
+        results_map = {key: results[i] for i, key in enumerate(CLUBS.keys())}
         
-        # Define retry parameters for Google Sheets export
-        MAX_EXPORT_RETRIES = 5  
-        EXPORT_RETRY_DELAY = 15 
+        # 2. Sequential Processing and Export with In-Place Retry
+        print("\n--- 2. Processing and Exporting Sequentially with Retry ---")
+        clubs_failed = []
         
-        # 2. Sequentially process and export data with retry logic
         for key, cfg in CLUBS.items():
             title = cfg["title"]
+            initial_result = results_map[key]
             
-            # --- START: Export Retry Logic ---
-            
-            # 1. Check for data fetching errors first
-            if fetch_tasks[key].exception():
-                print(f"❌ {title} failed: Data fetch error: {fetch_tasks[key].exception()}")
-                continue
+            # High-level retry loop
+            for attempt in range(MAX_CLUB_RETRIES):
+                if attempt > 0:
+                    print(f"\n⚡ Retrying club {title} (Attempt {attempt + 1}/{MAX_CLUB_RETRIES}) after waiting {CLUB_RETRY_DELAY}s...")
+                    await asyncio.sleep(CLUB_RETRY_DELAY)
                 
-            # 2. Process data before attempting export
-            try:
-                data = fetch_tasks[key].result() 
-                df = build_dataframe(data)
-            except Exception as e:
-                print(f"❌ {title} failed: Data processing error: {e}")
-                continue
-            
-            # 3. Retry loop for Sheets API (gspread)
-            export_success = False
-            for attempt in range(MAX_EXPORT_RETRIES):
                 try:
-                    print(f"→ Processing and exporting {title} (Attempt {attempt + 1}/{MAX_EXPORT_RETRIES})...")
-                    export_to_gsheets(df, spreadsheet_id=SHEET_ID, sheet_title=title, threshold=cfg["THRESHOLD"])
+                    # Attempt 1: Use the initial concurrent fetch result.
+                    # Subsequent attempts (Retry): Re-fetch the data (None will trigger fetch_json inside)
+                    data_to_use = initial_result if attempt == 0 and not isinstance(initial_result, Exception) else None
                     
-                    print(f"✅ {title} exported.")
-                    export_success = True
-                    break  # Success, exit the retry loop
+                    await process_and_export_club(cfg, data_or_task_result=data_to_use)
                     
-                except gspread.exceptions.APIError as e:
-                    # Check for "Internal error" (500)
-                    if "Internal error" in str(e) and attempt < MAX_EXPORT_RETRIES - 1:
-                        print(f"⚠️ Google Sheets API Error for {title} (Attempt {attempt + 1}/{MAX_EXPORT_RETRIES}): {e}. Retrying in {EXPORT_RETRY_DELAY}s...")
-                        # Use blocking time.sleep() as we are outside the primary async context loop here
-                        time.sleep(EXPORT_RETRY_DELAY)
-                        continue
+                    if attempt == 0:
+                         print(f"✅ {title} exported successfully.")
                     else:
-                        print(f"❌ {title} failed after {attempt + 1} API attempts: {e}")
-                        break # Final failure or a non-retryable error, move to the next club
-                
+                         print(f"✅ {title} exported successfully after {attempt} retry(ies).")
+                    break # Success, move to the next club
+                        
                 except Exception as e:
-                    # Catch any other unexpected error during export
-                    print(f"❌ {title} failed during export: {e}")
-                    break
-            
-            # --- END: Export Retry Logic ---
-
-        print("\n🎉 All clubs export complete (check for errors above)! (Or successful)")
+                    # Failure could be from fetch_json (final attempt) or gspread/processing error
+                    print(f"❌ {title} failed on attempt {attempt + 1}: {e}")
+                    if attempt == MAX_CLUB_RETRIES - 1:
+                        clubs_failed.append(title)
+                    # If not the final attempt, the loop continues (wait and retry)
+        
+        print("\n" + "="*50)
+        if clubs_failed:
+            print(f"⚠️ COMPLETED WITH ERRORS: {len(clubs_failed)} club(s) failed after {MAX_CLUB_RETRIES} attempts.")
+            print("    List of failed clubs: " + ", ".join(clubs_failed))
+        else:
+            print("🎉 COMPLETED: All clubs were exported successfully in order!")
+        print("="*50)
     
     else:
-        # Single club export path (fetch_json has its own retries)
+        cfg = choice
+        print(f"\nSelected: {cfg['title']}\nURL: {cfg['URL']}\nSheet: {SHEET_ID}\nThreshold: {cfg['THRESHOLD']}\n")
+
+        await export_single_club_with_retry_v2(cfg, MAX_CLUB_RETRIES, CLUB_RETRY_DELAY)
+
+# === Main logic for single club with retry (for the single choice path) ===
+async def export_single_club_with_retry_v2(cfg: dict, max_retries: int, retry_delay: int):
+    title = cfg['title']
+    for attempt in range(max_retries):
+        if attempt > 0:
+            print(f"\n⚡ Retrying full process for {title} (Attempt {attempt + 1}/{max_retries})...")
+            
+        try:
+            # Initial data is None to always trigger fetch_json inside
+            await process_and_export_club(cfg, data_or_task_result=None)
+            
+            if attempt == 0:
+                print(f"✅ Exported single club '{title}' successfully!")
+            else:
+                print(f"✅ Exported single club '{title}' successfully after {attempt} retry(ies)!")
+                
+            return True
+            
+        except Exception as e:
+            print(f"❌ Club '{title}' failed on attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
+                print(f"    Waiting {retry_delay}s before next retry...")
+                await asyncio.sleep(retry_delay)
+            else:
+                print(f"    Final failure for {title} after {max_retries} attempts.")
+                return False
+
+# Updated main entry function for ALL/Single logic
+async def main_updated():
+    choice = pick_club()
+    
+    MAX_CLUB_RETRIES = 3
+    CLUB_RETRY_DELAY = 5
+    
+    if choice == "ALL":
+        # Run ALL logic
+        print("\n⚡ Exporting ALL clubs: Concurrent data fetching, Sequential processing/Export with in-place retry to maintain order...\n")
+        
+        # 1. Concurrent data fetching
+        print("--- 1. Fetching All Data Concurrently ---")
+        fetch_tasks = {
+            key: asyncio.create_task(fetch_json(cfg["URL"])) 
+            for key, cfg in CLUBS.items()
+        }
+        
+        results = await asyncio.gather(*fetch_tasks.values(), return_exceptions=True)
+        results_map = {key: results[i] for i, key in enumerate(CLUBS.keys())}
+        
+        # 2. Sequential Processing and Export with In-Place Retry
+        print("\n--- 2. Processing and Exporting Sequentially with Retry ---")
+        clubs_failed = []
+        
+        for key, cfg in CLUBS.items():
+            title = cfg["title"]
+            initial_result = results_map[key]
+            
+            for attempt in range(MAX_CLUB_RETRIES):
+                if attempt > 0:
+                    print(f"\n⚡ Retrying club {title} (Attempt {attempt + 1}/{MAX_CLUB_RETRIES}) after waiting {CLUB_RETRY_DELAY}s...")
+                    await asyncio.sleep(CLUB_RETRY_DELAY)
+                
+                try:
+                    data_to_use = initial_result if attempt == 0 and not isinstance(initial_result, Exception) else None
+                    
+                    await process_and_export_club(cfg, data_or_task_result=data_to_use)
+                    
+                    if attempt == 0:
+                         print(f"✅ {title} exported successfully.")
+                    else:
+                         print(f"✅ {title} exported successfully after {attempt} retry(ies).")
+                    break
+                        
+                except Exception as e:
+                    print(f"❌ {title} failed on attempt {attempt + 1}: {e}")
+                    if attempt == MAX_CLUB_RETRIES - 1:
+                        clubs_failed.append(title)
+        
+        print("\n" + "="*50)
+        if clubs_failed:
+            print(f"⚠️ COMPLETED WITH ERRORS: {len(clubs_failed)} club(s) failed after {MAX_CLUB_RETRIES} attempts.")
+            print("    List of failed clubs: " + ", ".join(clubs_failed))
+        else:
+            print("🎉 COMPLETED: All clubs were exported successfully in order!")
+        print("="*50)
+
+    else:
+        # Run Single club logic
         cfg = choice
         print(f"\nSelected: {cfg['title']}\nURL: {cfg['URL']}\nSheet: {SHEET_ID}\nThreshold: {cfg['THRESHOLD']}\n")
         
-        # Define retry parameters for Google Sheets export
-        MAX_EXPORT_RETRIES = 5
-        EXPORT_RETRY_DELAY = 15
-        
-        try:
-            # 1. Fetch data
-            data = await fetch_json(cfg["URL"])
-            df = build_dataframe(data)
-            
-            # 2. Retry loop for export
-            for attempt in range(MAX_EXPORT_RETRIES):
-                try:
-                    print(f"→ Processing and exporting {cfg['title']} (Attempt {attempt + 1}/{MAX_EXPORT_RETRIES})...")
-                    export_to_gsheets(df, spreadsheet_id=SHEET_ID, sheet_title=cfg["title"], threshold=cfg["THRESHOLD"])
-                    print(f"✅ Exported single club '{cfg['title']}' successfully!")
-                    break
-                except gspread.exceptions.APIError as e:
-                    if "Internal error" in str(e) and attempt < MAX_EXPORT_RETRIES - 1:
-                        print(f"⚠️ Google Sheets API Error for {cfg['title']} (Attempt {attempt + 1}/{MAX_EXPORT_RETRIES}): {e}. Retrying in {EXPORT_RETRY_DELAY}s...")
-                        time.sleep(EXPORT_RETRY_DELAY)
-                        continue
-                    else:
-                        print(f"❌ Exported single club '{cfg['title']}' failed after {attempt + 1} API attempts: {e}")
-                        break
-            
-        except Exception as e:
-            print(f"❌ Selected club '{cfg['title']}' failed: {e}")
+        await export_single_club_with_retry_v2(cfg, MAX_CLUB_RETRIES, CLUB_RETRY_DELAY)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
-    input("Press Enter to close the terminal...") 
+    asyncio.run(main_updated())
+    input("Press Enter to close terminal...")
